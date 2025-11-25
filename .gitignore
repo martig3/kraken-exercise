@@ -3,6 +3,10 @@
 /node_modules
 /build
 
+# app files
+app.db
+/repos
+
 # Logs
 logs
 *.log

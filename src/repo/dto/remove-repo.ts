@@ -1,5 +1,5 @@
 import { IsNotEmpty, IsUrl } from 'class-validator';
-export class CreateRepoDto {
+export class RemoveRepoDto {
   @IsNotEmpty()
   @IsUrl()
   url: string;

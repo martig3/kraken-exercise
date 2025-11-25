@@ -1,5 +1,7 @@
+import { UUID } from 'crypto';
+
+// just alias this here since it doesn't differ from the DTO, perhaps it would in the future
 export interface Repo {
-  name: string;
-  description: string;
-  token: string;
+  id: UUID;
+  url: string;
 }

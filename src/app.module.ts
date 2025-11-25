@@ -3,10 +3,11 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { RepoService } from './repo/repo.service';
 import { DrizzleService } from './drizzle/drizzle.service';
+import { RepoController } from './repo/repo.controller';
 
 @Module({
   imports: [],
-  controllers: [AppController],
+  controllers: [AppController, RepoController],
   providers: [AppService, RepoService, DrizzleService],
 })
 export class AppModule {}
