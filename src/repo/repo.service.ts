@@ -5,32 +5,17 @@ import { DrizzleService } from 'src/drizzle/drizzle.service';
 import { files, repos } from 'src/db/schema';
 import { promisify } from 'node:util';
 import { exec } from 'node:child_process';
-import { promises as fs } from 'node:fs';
-import * as path from 'node:path';
 import { eq } from 'drizzle-orm';
 import { err, ok, Result } from 'neverthrow';
 import { RemoveRepoDto } from './dto/remove-repo';
+import { CoverageService } from 'src/coverage/coverage.service';
 
 @Injectable()
 export class RepoService {
-  constructor(private readonly drizzleService: DrizzleService) {}
-
-  private async findTestFiles(dirPath: string): Promise<string[]> {
-    try {
-      const files = await fs.readdir(dirPath, {
-        recursive: true,
-        withFileTypes: false,
-      });
-      console.log(files.length);
-
-      return files
-        .filter((file) => file.endsWith('.test.ts'))
-        .map((file) => path.join(dirPath, file));
-    } catch (error) {
-      console.error(`Error finding test files in ${dirPath}:`, error);
-      return [];
-    }
-  }
+  constructor(
+    private readonly drizzleService: DrizzleService,
+    private readonly coverageService: CoverageService,
+  ) {}
 
   async create(createRepoDto: CreateRepoDto): Promise<Result<Repo, string>> {
     const existingRepo = await this.drizzleService.db.query.repos.findFirst({
@@ -42,6 +27,8 @@ export class RepoService {
 
     const execAsync = promisify(exec);
 
+    // this kind of processing from here on would be queued in a prod
+    // environment, but here lets just do it procedurally
     try {
       await execAsync(`cd ./repos && git clone ${createRepoDto.url}`);
     } catch (error) {
@@ -49,12 +36,6 @@ export class RepoService {
       return err(`Failed to clone repository: ${error}`);
     }
 
-    const record = await this.drizzleService.db
-      .insert(repos)
-      .values({ url: createRepoDto.url })
-      .returning();
-
-    // Extract repo name from URL
     const repoName =
       createRepoDto.url.split('/').pop()?.replace('.git', '') ?? '';
 
@@ -62,23 +43,41 @@ export class RepoService {
       return err('Invalid repository URL');
     }
 
-    const repoPath = path.join('./repos', repoName);
-    const testFiles = await this.findTestFiles(repoPath);
+    const uuid = crypto.randomUUID();
 
-    // testFiles.map(f => () => {
-    //   this.drizzleService.db.insert(files).values({})
-    // })
-    testFiles.forEach((file) => {
-      console.log(`  - ${path.relative(repoPath, file)}`);
-    });
+    const coverageResult = await this.coverageService.processRepoCoverage(
+      repoName,
+      uuid,
+    );
+    if (coverageResult.isErr()) {
+      return err(`Failed to process coverage: \n${coverageResult.error}`);
+    }
+    const records = await this.drizzleService.db
+      .insert(repos)
+      .values({ url: createRepoDto.url, id: uuid })
+      .returning();
 
-    return ok(record[0]);
+    if (records.length === 0) {
+      return err('Failed to insert repo');
+    }
+    const record = records[0];
+
+    return ok(record);
   }
 
   async remove(removeRepoDto: RemoveRepoDto): Promise<Result<null, string>> {
-    await this.drizzleService.db
+    // here I would also delete the repo from the file system, but I am
+    // far too wary to introduce recursive folder deletion logic in a sample program
+    // so feel free to just do it manually
+    const results = await this.drizzleService.db
       .delete(repos)
-      .values({ url: removeRepoDto.url });
+      .where(eq(repos.url, removeRepoDto.url))
+      .returning();
+
+    const result = results[0];
+    await this.drizzleService.db
+      .delete(files)
+      .where(eq(files.repoId, result.id));
     return ok(null);
   }
 

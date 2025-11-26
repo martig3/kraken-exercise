@@ -3,6 +3,7 @@ import { AppModule } from './app.module';
 import Database from 'libsql';
 import { exec } from 'node:child_process';
 import { configDotenv } from 'dotenv';
+import { ValidationPipe } from '@nestjs/common';
 
 async function bootstrap() {
   configDotenv();
@@ -16,6 +17,8 @@ async function bootstrap() {
   exec('mkdir ./repos');
 
   const app = await NestFactory.create(AppModule);
+  app.enableCors('*');
+  app.useGlobalPipes(new ValidationPipe());
   await app.listen(process.env.PORT ?? 3000);
 }
 bootstrap();
