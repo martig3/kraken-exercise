@@ -1,8 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { eq } from 'drizzle-orm';
 import { err, ok, Result } from 'neverthrow';
-import { files, RepoFile, repos } from 'src/db/schema';
+import { RepoFile } from 'src/db/schema';
 import { DrizzleService } from 'src/drizzle/drizzle.service';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -11,6 +10,7 @@ import { exec } from 'node:child_process';
 import { RepoService } from 'src/repo/repo.service';
 import { GenaiService } from 'src/genai/genai.service';
 import { GithubService } from 'src/github/github.service';
+import { FilesService } from 'src/files/files.service';
 
 @Injectable()
 export class TasksService {
@@ -18,54 +18,42 @@ export class TasksService {
   constructor(
     private readonly drizzleService: DrizzleService,
     private readonly repoService: RepoService,
+    private readonly fileService: FilesService,
     private readonly genAiService: GenaiService,
     private readonly githubService: GithubService,
   ) {}
 
   @Cron('5 * * * * *')
   async handleGenerateImprovementsCron(): Promise<void> {
-    const file = await this.drizzleService.db.query.files.findFirst({
-      where: eq(files.status, 'queued'),
-    });
-
+    const file = await this.fileService.findNextQueued();
     if (!file) {
       this.logger.log('no files queued for improvements');
       return;
     }
-    await this.drizzleService.db
-      .update(files)
-      .set({ status: 'processing' })
-      .where(eq(files.path, file.path));
+    await this.fileService.updateFile({ ...file, status: 'processing' });
     const result = await this.handleGenerateImprovements(file);
     if (result.isErr()) {
       this.logger.error('Error generating improvements', result.error);
-      await this.drizzleService.db
-        .update(files)
-        .set({ status: 'error' })
-        .where(eq(files.path, file.path));
+      await this.fileService.updateFile({ ...file, status: 'error' });
       return;
     }
-    await this.drizzleService.db
-      .update(files)
-      .set({ status: 'processed' })
-      .where(eq(files.path, file.path));
+    await this.fileService.updateFile({ ...file, status: 'processed' });
   }
   async handleGenerateImprovements(
     file: RepoFile,
   ): Promise<Result<void, string>> {
     this.logger.log('Starting handleGenerateImprovements');
-    const repo = await this.drizzleService.db.query.repos.findFirst({
-      where: eq(repos.id, file.repoId),
-    });
+    const repo = await this.repoService.findRepoById(file.repoId);
     if (!repo) {
       return err('Repo not found');
     }
-    const repoNameResult = this.repoService.getRepoNameFromUrl(repo.url);
+    const repoNameResult = this.repoService.getRepoNameByUrl(repo.url);
     if (repoNameResult.isErr()) {
       return err('Repo name not found');
     }
     const repoName = repoNameResult.value;
     const filePath = file.path;
+    const testFilePath = filePath.replace('.ts', '.test.ts');
     const existingPath = path.join('./repos', repoName);
     const uuid = crypto.randomUUID();
     const newPath = path.join('./repos', `${repoName}-${uuid}`);
@@ -74,7 +62,7 @@ export class TasksService {
     const execAsync = promisify(exec);
     await execAsync(`cd ${newPath} && git checkout -b enhance/tests-${uuid} `);
     const testFileContents = await fs.readFile(
-      path.join(newPath, filePath.replace('.ts', '.test.ts')),
+      path.join(newPath, testFilePath),
       'utf8',
     );
     const fileContents = await fs.readFile(
@@ -89,11 +77,7 @@ export class TasksService {
     if (!response) {
       return err('no response returned');
     }
-    await fs.writeFile(
-      path.join(newPath, filePath.replace('.ts', '.test.ts')),
-      response,
-      'utf8',
-    );
+    await fs.writeFile(path.join(newPath, testFilePath), response, 'utf8');
     await execAsync(
       `cd ${newPath} && git add . && git commit -m "Enhanced test coverage for ${filePath}" && git push origin enhance/tests-${uuid}`,
     );

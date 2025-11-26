@@ -9,6 +9,7 @@ import { eq } from 'drizzle-orm';
 import { err, ok, Result } from 'neverthrow';
 import { RemoveRepoDto } from './dto/remove-repo';
 import { CoverageService } from 'src/coverage/coverage.service';
+import { UUID } from 'node:crypto';
 
 @Injectable()
 export class RepoService {
@@ -16,7 +17,7 @@ export class RepoService {
     private readonly drizzleService: DrizzleService,
     private readonly coverageService: CoverageService,
   ) {}
-  getRepoNameFromUrl(url: string) {
+  getRepoNameByUrl(url: string) {
     const repoName = url.split('/').pop()?.replace('.git', '') ?? '';
 
     if (!repoName) {
@@ -24,10 +25,28 @@ export class RepoService {
     }
     return ok(repoName);
   }
-  async create(createRepoDto: CreateRepoDto): Promise<Result<Repo, string>> {
-    const existingRepo = await this.drizzleService.db.query.repos.findFirst({
-      where: eq(repos.url, createRepoDto.url),
+  async findRepoByUrl(url: string) {
+    return await this.drizzleService.db.query.repos.findFirst({
+      where: eq(repos.url, url),
     });
+  }
+  async findRepoById(id: UUID) {
+    return await this.drizzleService.db.query.repos.findFirst({
+      where: eq(repos.id, id),
+    });
+  }
+  async findAll(): Promise<Repo[]> {
+    return await this.drizzleService.db.query.repos.findMany();
+  }
+  async insertRepo(newRepo: Repo) {
+    const records = await this.drizzleService.db
+      .insert(repos)
+      .values(newRepo)
+      .returning();
+    return records[0];
+  }
+  async create(createRepoDto: CreateRepoDto): Promise<Result<Repo, string>> {
+    const existingRepo = await this.findRepoByUrl(createRepoDto.url);
     if (existingRepo) {
       return err('Repo already exists');
     }
@@ -43,7 +62,7 @@ export class RepoService {
       return err(`Failed to clone repository: ${error}`);
     }
 
-    const repoName = this.getRepoNameFromUrl(createRepoDto.url);
+    const repoName = this.getRepoNameByUrl(createRepoDto.url);
 
     if (repoName.isErr()) {
       return err(repoName.error);
@@ -58,23 +77,22 @@ export class RepoService {
     if (coverageResult.isErr()) {
       return err(`Failed to process coverage: \n${coverageResult.error}`);
     }
-    const records = await this.drizzleService.db
-      .insert(repos)
-      .values({ url: createRepoDto.url, id: uuid })
-      .returning();
+    const insertRecord = await this.insertRepo({
+      url: createRepoDto.url,
+      id: uuid,
+    });
 
-    if (records.length === 0) {
+    if (!insertRecord) {
       return err('Failed to insert repo');
     }
-    const record = records[0];
 
-    return ok(record);
+    return ok(insertRecord);
   }
 
   async remove(removeRepoDto: RemoveRepoDto): Promise<Result<null, string>> {
     // here I would also delete the repo from the file system, but I am
-    // far too wary to introduce recursive folder deletion logic in a sample program
-    // so feel free to just do it manually
+    // far too wary to introduce recursive dir deletion logic in a sample program
+    // so feel free to just do it manually, this is mostly a utility function for testing
     const results = await this.drizzleService.db
       .delete(repos)
       .where(eq(repos.url, removeRepoDto.url))
@@ -85,9 +103,5 @@ export class RepoService {
       .delete(files)
       .where(eq(files.repoId, result.id));
     return ok(null);
-  }
-
-  async findAll(): Promise<Repo[]> {
-    return await this.drizzleService.db.query.repos.findMany();
   }
 }

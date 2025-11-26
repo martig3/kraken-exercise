@@ -6,13 +6,13 @@ import { exec } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import { constants } from 'node:fs/promises';
 import { CoverageSummary } from './coverage.interface';
-import { DrizzleService } from 'src/drizzle/drizzle.service';
-import { files } from 'src/db/schema';
+import { RepoFile } from 'src/db/schema';
 import { UUID } from 'node:crypto';
+import { FilesService } from 'src/files/files.service';
 
 @Injectable()
 export class CoverageService {
-  constructor(private readonly drizzleService: DrizzleService) {}
+  constructor(private readonly filesService: FilesService) {}
   async processRepoCoverage(
     repoName: string,
     repoId: UUID,
@@ -65,32 +65,22 @@ export class CoverageService {
 
     const coverageFiles = Object.keys(coverageJSON)
       .filter((k) => k !== 'total')
-      .map((k) => ({
-        path: k.split(repoName)[1],
-        coverage: Number.parseInt(coverageJSON[k].lines.pct.toString()),
-      }));
+      .map(
+        (k) =>
+          ({
+            path: k.split(repoName)[1],
+            coverage: Number.parseInt(coverageJSON[k].lines.pct.toString()),
+            status: 'default',
+            prUrl: null,
+            repoId,
+          }) satisfies RepoFile,
+      );
 
-    try {
-      await this.drizzleService.db.transaction(async (tx) => {
-        // this would be batched to avoid spamming the DB ideally,
-        // but I'm going to keep it simple here
-        const fileInserts = await Promise.all(
-          coverageFiles.map(async (file) => {
-            const result = await tx.insert(files).values({ ...file, repoId });
-            if (result.rowsAffected == 0) {
-              return err(`Failed to insert file path ${file.path}`);
-            }
-            return ok(result);
-          }),
-        );
-        if (fileInserts.some((result) => result.isErr())) {
-          tx.rollback();
-          return err('Failed to insert some file paths');
-        }
-      });
-    } catch (error) {
-      return err(`Transaction failed: ${error}`);
+    const insertResult = await this.filesService.insertManyFiles(coverageFiles);
+    if (insertResult.isErr()) {
+      return err(`Failed to insert coverage files: ${insertResult.error}`);
     }
+
     return ok();
   }
 }

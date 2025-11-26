@@ -27,3 +27,4 @@ export const files = sqliteTable(
 );
 
 export type RepoFile = typeof files.$inferSelect;
+export type InsertRepoFile = typeof files.$inferInsert;
