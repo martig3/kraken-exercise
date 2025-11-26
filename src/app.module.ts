@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { RepoService } from './repo/repo.service';
@@ -10,10 +11,16 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { TasksService } from './tasks/tasks.service';
 import { GenaiService } from './genai/genai.service';
 import { GithubService } from './github/github.service';
+import { FilesController } from './files/files.controller';
 
 @Module({
-  imports: [ScheduleModule.forRoot()],
-  controllers: [AppController, RepoController],
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+    }),
+    ScheduleModule.forRoot(),
+  ],
+  controllers: [AppController, RepoController, FilesController],
   providers: [
     AppService,
     RepoService,

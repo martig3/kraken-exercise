@@ -44,7 +44,7 @@ export class RepoService {
       .insert(repos)
       .values(newRepo)
       .returning();
-    return records[0];
+    return records?.[0];
   }
   async create(createRepoDto: CreateRepoDto): Promise<Result<Repo, string>> {
     const existingRepo = await this.findRepoByUrl(createRepoDto.url);

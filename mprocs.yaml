@@ -1,0 +1,5 @@
+procs:
+  api:
+    shell: 'npm run start:dev'
+  client:
+    shell: 'cd client && npm run dev'

@@ -23,13 +23,16 @@ export class TasksService {
     private readonly githubService: GithubService,
   ) {}
 
-  @Cron('5 * * * * *')
+  // main handler for handling async generations, normally this would
+  // be in a job queue but I decided not to get redis involved
+  // so this will work fine for demo purposes
+  @Cron('* * * * * *')
   async handleGenerateImprovementsCron(): Promise<void> {
     const file = await this.fileService.findNextQueued();
     if (!file) {
-      this.logger.log('no files queued for improvements');
       return;
     }
+    this.logger.log('starting improvements generation:', file.path);
     await this.fileService.updateFile({ ...file, status: 'processing' });
     const result = await this.handleGenerateImprovements(file);
     if (result.isErr()) {
@@ -57,10 +60,11 @@ export class TasksService {
     const existingPath = path.join('./repos', repoName);
     const uuid = crypto.randomUUID();
     const newPath = path.join('./repos', `${repoName}-${uuid}`);
+    this.logger.log('copying from:', existingPath, 'to:', newPath);
     await fs.cp(existingPath, newPath, { recursive: true });
 
     const execAsync = promisify(exec);
-    await execAsync(`cd ${newPath} && git checkout -b enhance/tests-${uuid} `);
+    await execAsync(`cd ${newPath} && git checkout -b enhance/tests-${uuid}`);
     const testFileContents = await fs.readFile(
       path.join(newPath, testFilePath),
       'utf8',
@@ -77,10 +81,20 @@ export class TasksService {
     if (!response) {
       return err('no response returned');
     }
-    await fs.writeFile(path.join(newPath, testFilePath), response, 'utf8');
-    await execAsync(
-      `cd ${newPath} && git add . && git commit -m "Enhanced test coverage for ${filePath}" && git push origin enhance/tests-${uuid}`,
+    const newTestFilePath = path.join(newPath, testFilePath);
+    this.logger.log('writing to:', newTestFilePath);
+    await fs.writeFile(newTestFilePath, response, 'utf8');
+
+    const pushResult = await this.githubService.pushChanges(
+      newPath,
+      `enhance/tests-${uuid}`,
+      testFilePath,
+      `Enhanced test coverage for ${filePath}`,
     );
+
+    if (pushResult.isErr()) {
+      return err(`Failed to push changes: ${pushResult.error}`);
+    }
 
     const submitResult = await this.githubService.submitPR(
       newPath,
@@ -89,6 +103,15 @@ export class TasksService {
     );
     if (submitResult.isErr()) {
       return err(`PR submission failed: ${submitResult.error}`);
+    }
+
+    const updateResult = await this.fileService.updateFile({
+      ...file,
+      status: 'processed',
+      prUrl: submitResult.value,
+    });
+    if (updateResult.isErr()) {
+      return err(`File not updated after processing: ${updateResult.error}`);
     }
 
     return ok();

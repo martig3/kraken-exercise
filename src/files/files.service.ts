@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { UUID } from 'crypto';
-import { eq } from 'drizzle-orm';
-import { err, ok } from 'neverthrow';
+import { and, eq } from 'drizzle-orm';
+import { err, ok, Result } from 'neverthrow';
 import {
   files,
   files as filesTable,
@@ -24,12 +24,21 @@ export class FilesService {
       where: eq(files.status, 'queued'),
     });
   }
-  async updateFile(updatedFile: InsertRepoFile) {
+  async updateFile(
+    updatedFile: InsertRepoFile,
+  ): Promise<Result<RepoFile, string>> {
     const result = await this.drizzleService.db
       .update(files)
       .set(updatedFile)
-      .where(eq(files.path, updatedFile.path));
-    return result;
+      .where(
+        and(
+          eq(files.path, updatedFile.path),
+          eq(files.repoId, updatedFile.repoId),
+        ),
+      )
+      .returning();
+    if (result.length === 0) return err('failed to update');
+    return ok(result[0]);
   }
   async insertManyFiles(newFiles: RepoFile[]) {
     try {
