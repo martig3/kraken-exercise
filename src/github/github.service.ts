@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Octokit } from '@octokit/rest';
 import { err, ok, Result } from 'neverthrow';
 import { exec } from 'node:child_process';
@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 
 @Injectable()
 export class GithubService {
+  private readonly logger = new Logger(GithubService.name);
   octokit: Octokit;
   constructor() {
     this.octokit = new Octokit({
@@ -36,11 +37,11 @@ export class GithubService {
         base: 'main',
       });
 
-      console.log(`Pull request created: ${pullRequest.html_url}`);
+      this.logger.log(`Pull request created: ${pullRequest.html_url}`);
 
       return ok(pullRequest.html_url);
     } catch (error) {
-      console.error('Failed to create pull request:', error);
+      this.logger.error('Failed to create pull request:', error);
       return err(`Failed to create pull request: ${error}`);
     }
   }

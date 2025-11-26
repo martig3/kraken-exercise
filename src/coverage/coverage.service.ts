@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { err, fromThrowable, ok, Result } from 'neverthrow';
 import path from 'path';
 import { promisify } from 'node:util';
@@ -12,6 +12,7 @@ import { FilesService } from 'src/files/files.service';
 
 @Injectable()
 export class CoverageService {
+  private readonly logger = new Logger(CoverageService.name);
   constructor(private readonly filesService: FilesService) {}
   async processRepoCoverage(
     repoName: string,
@@ -29,7 +30,7 @@ export class CoverageService {
         `cd ${repoPath} && ${packageMangager} install && ${packageMangager} run coverage`,
       );
     } catch (error) {
-      console.error(error);
+      this.logger.error('Failed to run coverage on repository', error);
       return err(`Failed to run coverage on repository: ${error}`);
     }
 
@@ -43,7 +44,7 @@ export class CoverageService {
     try {
       await fs.access(coveragePath, constants.R_OK);
     } catch (e) {
-      console.error(e);
+      this.logger.error('Failed to access coverage file', e);
       return err(`Failed to access coverage file: ${e}`);
     }
     const coverageString = await fs.readFile(coveragePath, {

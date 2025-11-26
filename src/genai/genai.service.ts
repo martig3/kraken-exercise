@@ -1,9 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { GoogleGenAI } from '@google/genai';
 import { Octokit } from '@octokit/rest';
 
 @Injectable()
 export class GenaiService {
+  private readonly logger = new Logger(GenaiService.name);
   ai: GoogleGenAI;
   octokit: Octokit;
 
@@ -22,7 +23,7 @@ export class GenaiService {
         candidateCount: 1,
       },
     });
-    console.log(response.executableCode);
+    this.logger.log(response.executableCode);
     return response.executableCode;
   }
 }

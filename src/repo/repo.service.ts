@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Repo } from './repo.interface';
 import { CreateRepoDto } from './dto/create-repo';
 import { DrizzleService } from 'src/drizzle/drizzle.service';
@@ -13,6 +13,7 @@ import { UUID } from 'node:crypto';
 
 @Injectable()
 export class RepoService {
+  private readonly logger = new Logger(RepoService.name);
   constructor(
     private readonly drizzleService: DrizzleService,
     private readonly coverageService: CoverageService,
@@ -58,7 +59,7 @@ export class RepoService {
     try {
       await execAsync(`cd ./repos && git clone ${createRepoDto.url}`);
     } catch (error) {
-      console.error(error);
+      this.logger.error('Failed to clone repository', error);
       return err(`Failed to clone repository: ${error}`);
     }
 
