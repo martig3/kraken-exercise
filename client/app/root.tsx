@@ -45,11 +45,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <SSEProvider>
-      <div
-        className={
-          'container h-dvh w-full p-8 flex items-center justify-center'
-        }
-      >
+      <div className={'h-dvh w-full p-8 flex items-center justify-center'}>
         <Outlet />
       </div>
     </SSEProvider>

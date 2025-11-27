@@ -34,6 +34,7 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
     path: string;
     coverage: number;
     prUrl?: string;
+    status?: string;
   }[];
   return { files };
 }
@@ -96,6 +97,17 @@ export default function Files({ loaderData }: Route.ComponentProps) {
     }
   });
 
+  const generate = async (f: Record<string, unknown>) => {
+    await fetch(`${API_BASE_URL}/files`, {
+      method: 'PATCH',
+      body: JSON.stringify({ ...f, status: 'queued' }),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+    await revalidator.revalidate();
+  };
+
   return (
     <Card className="p-8">
       <CardTitle className="flex items-center gap-2">
@@ -125,8 +137,11 @@ export default function Files({ loaderData }: Route.ComponentProps) {
             {!f.prUrl ? (
               <Button
                 variant="outline"
+                onClick={() => generate(f)}
                 disabled={
-                  activeFiles.has(f.path) && taskProgress[f.path] !== undefined
+                  (activeFiles.has(f.path) &&
+                    taskProgress[f.path] !== undefined) ||
+                  f.status === 'queued'
                 }
               >
                 {activeFiles.has(f.path) && taskProgress[f.path] ? (
@@ -150,6 +165,14 @@ export default function Files({ loaderData }: Route.ComponentProps) {
               <ItemSeparator />
               <span className="text-sm text-muted-foreground">
                 {'✅ Completed'}
+              </span>
+            </>
+          )}
+          {f.status === 'queued' && !taskProgress[f.path] && (
+            <>
+              <ItemSeparator />
+              <span className="text-sm text-muted-foreground">
+                {'⏱️ Queued'}
               </span>
             </>
           )}
